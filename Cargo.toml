@@ -6,10 +6,15 @@ name = "app"
 version = "0.1.0"
 
 [dependencies]
-cortex-m = "0.6.0"
-cortex-m-rt = "0.6.10"
+cortex-m = "0.7"
+cortex-m-rt = { version = "0.7", features = ["device"] }
 cortex-m-semihosting = "0.3.3"
+p256 = { version = "0.13.0", default-features = false, features = ["arithmetic", "ecdh", "ecdsa", "sha2" ] }
 panic-halt = "0.2.0"
+panic-semihosting = "0.6.0"
+
+# Some cryptography stuff.
+sha2 = { version = "0.10", default-features = false }
 
 # Uncomment for the panic example.
 # panic-itm = "0.4.1"
@@ -24,6 +29,9 @@ panic-halt = "0.2.0"
 # features = ["stm32f303", "rt"]
 # version = "0.7.1"
 
+# The above is deprecated.
+stm32f3xx-hal = { version = "0.9", features = ["stm32f303xc", "rt", "ld"] }
+
 # this lets you use `cargo fix`!
 [[bin]]
 name = "app"
@@ -33,4 +41,11 @@ bench = false
 [profile.release]
 codegen-units = 1 # better optimizations
 debug = true # symbols are nice and they don't increase the size on Flash
+opt-level = "s"
 lto = true # better optimizations
+
+[profile.dev]
+# codegen-units = 1
+opt-level = "s"
+debug = true
+# lto = true
