@@ -1,8 +1,12 @@
 #![no_std]
 #![no_main]
 
-use core::sync::atomic::{AtomicU32, Ordering};
+extern crate alloc;
 
+use core::{sync::atomic::{AtomicU32, Ordering}};
+
+use aes_gcm::{Aes128Gcm, KeyInit, Nonce, aead::AeadMutInPlace};
+use embedded_alloc::Heap;
 use p256::{
     ecdsa::{signature::Signer, Signature, SigningKey},
     elliptic_curve::{point::AffineCoordinates, ScalarPrimitive},
@@ -25,12 +29,24 @@ use sha2::{Digest, Sha256};
 
 use stm32f3xx_hal::{pac, prelude::*};
 
+mod bench;
+
+#[global_allocator]
+static HEAP: Heap = Heap::empty();
+
 static TICK_BASE: u32 = 12_000_000;
 
 static WRAP_COUNT: AtomicU32 = AtomicU32::new(0);
 
 #[entry]
 fn main() -> ! {
+    // Initialize a small heap to make some things easier.
+    {
+        use core::mem::MaybeUninit;
+        const HEAP_SIZE: usize = 4096;
+        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
+        unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
+    }
     let dp = pac::Peripherals::take().unwrap();
 
     let mut flash = dp.FLASH.constrain();
@@ -58,6 +74,13 @@ fn main() -> ! {
     asm::nop();
     let (wraps, count, mut systick) = timer.stop();
     hprintln!("Empty tick: {},{}", wraps, count).unwrap();
+
+    bench::bench_sha2_rustcrypto(&mut systick);
+    bench::bench_pkey_sign(&mut systick);
+
+    if true {
+        panic!("Early stop");
+    }
 
     let (hash, count) = time(&mut systick, || {
         let mut hasher = Sha256::new();
@@ -93,6 +116,20 @@ fn main() -> ! {
     });
     hprintln!("Pub {} ticks: {:?}", pubkey, count).unwrap();
 
+    static TEST_KEY: [u8; 16] = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    ];
+    let plain = b"12345678";
+    let mut ciphertext: heapless::Vec<u8, 24> = heapless::Vec::new();
+    let mut cipher = Aes128Gcm::new_from_slice(&TEST_KEY).unwrap();
+    let ((), count) = time(&mut systick, || {
+        let nonce = Nonce::from_slice(b"unique nonce");
+        ciphertext.extend_from_slice(plain).unwrap();
+        cipher.encrypt_in_place(&nonce, b"", &mut ciphertext).unwrap();
+        ()
+    });
+    hprintln!("Cipher: {} ticks: {}", count, ciphertext[0]).unwrap();
+
     asm::nop(); // To not have main optimize to abort in release mode, remove when you add code
 
     loop {
@@ -127,7 +164,7 @@ impl Timer {
 }
 
 /// A functional timer, with callback.
-fn time<F, R>(systick: &mut SYST, f: F) -> (R, u64)
+pub fn time<F, R>(systick: &mut SYST, f: F) -> (R, u64)
 where
     F: FnOnce() -> R,
 {
