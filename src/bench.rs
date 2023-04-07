@@ -1,8 +1,7 @@
 //! Benchmarking
 
-use alloc::{string::String, format};
 use cortex_m::peripheral::SYST;
-use cortex_m_semihosting::hprintln;
+use defmt::info;
 use p256::{elliptic_curve::ScalarPrimitive, SecretKey, ecdsa::{SigningKey, Signature, signature::{Signer, Verifier}, VerifyingKey}};
 use sha2::{Digest, Sha256};
 
@@ -11,7 +10,7 @@ use crate::time;
 static CPU_FREQ: u64 = 72_000_000;
 
 pub fn bench_sha2_rustcrypto(systick: &mut SYST) {
-    hprintln!("rustcrypto, sha2, small").unwrap();
+    info!("rustcrypto, sha2, small");
 
     let (hash, count) = time(systick, || {
         let mut summary = 0u8;
@@ -23,10 +22,10 @@ pub fn bench_sha2_rustcrypto(systick: &mut SYST) {
         }
         summary
     });
-    hprintln!("128 iters, {} ticks {}, ({})", count, pp_ticks(count), hash).unwrap();
+    info!("128 iters, {} ticks {}, ({})", count, Human(count), hash);
 
-    hprintln!("rustcrypto, sha2, large").unwrap();
-    hprintln!("bytes: {}", BLOCK.len()).unwrap();
+    info!("rustcrypto, sha2, large");
+    info!("bytes: {}", BLOCK.len());
 
     let (hash, count) = time(systick, || {
         let mut summary = 0u8;
@@ -40,11 +39,11 @@ pub fn bench_sha2_rustcrypto(systick: &mut SYST) {
         }
         summary
     });
-    hprintln!("1 iter, {} ticks {}, ({})", count, pp_ticks(count), hash).unwrap();
+    info!("1 iter, {} ticks {}, ({})", count, Human(count), hash);
 }
 
 pub fn bench_pkey_sign(systick: &mut SYST) {
-    hprintln!("p256 operations").unwrap();
+    info!("p256 operations");
 
     static SECRET_BYTES: [u8; 32] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
@@ -54,7 +53,7 @@ pub fn bench_pkey_sign(systick: &mut SYST) {
         let bytes = ScalarPrimitive::from_slice(&SECRET_BYTES).unwrap();
         SecretKey::new(bytes)
     });
-    hprintln!("Load key from bytes: {} ticks", pp_ticks(count)).unwrap();
+    info!("Load key from bytes: {} ticks", Human(count));
 
     // Perform a digital signature itself.
     let (sig, count) = time(systick, || {
@@ -63,14 +62,14 @@ pub fn bench_pkey_sign(systick: &mut SYST) {
         let sig: Signature = signer.sign(b"Message to sign");
         sig
     });
-    hprintln!("Sign: {} ticks", pp_ticks(count)).unwrap();
+    info!("Sign: {} ticks", Human(count));
 
     // Perform a signature verification.
     let (good, count) = time(systick, || {
         let verifier = VerifyingKey::from(pk.public_key());
         verifier.verify(b"Message to sign", &sig).is_ok()
     });
-    hprintln!("Verify: {} ticks, true={}", pp_ticks(count), good).unwrap();
+    info!("Verify: {} ticks, true={}", Human(count), good);
 }
 
 // A block of data that we can use to hash larger amounts of data.
@@ -81,15 +80,20 @@ static BLOCK: &[u8] = b"This is a fairly long block of data \
                         could actually be a bit tedious.  The contents \
                         of this block doesn't really matter.";
 
-// Convert a ticks into a nicely formatted version.
-fn pp_ticks(count: u64) -> String {
-    let mut time = count as f32 / CPU_FREQ as f32;
-    let mut pos = 0;
-    while pos < UNITS.len() - 1 && time < 1.0 {
-        pos += 1;
-        time *= 1000.0;
+// Wrap a time tick with something that will make it print in a nice
+// human-readable format.
+struct Human(u64);
+
+impl defmt::Format for Human {
+    fn format(&self, f: defmt::Formatter) {
+        let mut time = self.0 as f32 / CPU_FREQ as f32;
+        let mut pos = 0;
+        while pos < UNITS.len() - 1 && time < 1.0 {
+            pos += 1;
+            time *= 1000.0;
+        }
+        defmt::write!(f, "{}{}", time, UNITS[pos])
     }
-    format!("{:.3}{}", time, UNITS[pos])
 }
 
 static UNITS: [&'static str; 5] = [
