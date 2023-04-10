@@ -1,13 +1,14 @@
 #![no_std]
 #![no_main]
 
-// extern crate alloc;
+extern crate alloc;
 
 use core::{sync::atomic::{AtomicU32, Ordering}, fmt::Write};
 
 use defmt::info;
 use defmt_rtt as _;
 
+use embedded_alloc::Heap;
 use hal::{serial::Serial, gpio::{self, AF7, PushPull}};
 // pick a panicking behavior
 // use panic_halt as _; // you can put a breakpoint on `rust_begin_unwind` to catch panics
@@ -26,9 +27,13 @@ use cortex_m_rt::{entry, exception};
 use stm32f3xx_hal::{self as hal, pac, prelude::*};
 
 mod bench;
+mod errors;
+mod pdump;
 
-// #[global_allocator]
-// static HEAP: Heap = Heap::empty();
+type Result<T> = core::result::Result<T, errors::AppError>;
+
+#[global_allocator]
+static HEAP: Heap = Heap::empty();
 
 static TICK_BASE: u32 = 12_000_000;
 
@@ -37,12 +42,12 @@ static WRAP_COUNT: AtomicU32 = AtomicU32::new(0);
 #[entry]
 fn main() -> ! {
     // Initialize a small heap to make some things easier.
-    // {
-    //     use core::mem::MaybeUninit;
-    //     const HEAP_SIZE: usize = 4096;
-    //     static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
-    //     unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
-    // }
+    {
+        use core::mem::MaybeUninit;
+        const HEAP_SIZE: usize = 4096;
+        static mut HEAP_MEM: [MaybeUninit<u8>; HEAP_SIZE] = [MaybeUninit::uninit(); HEAP_SIZE];
+        unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
+    }
     let dp = pac::Peripherals::take().unwrap();
 
     defmt::error!("Error level message: {}", 42);
@@ -93,6 +98,8 @@ fn main() -> ! {
 
     bench::bench_sha2_rustcrypto(&mut systick);
     bench::bench_pkey_sign(&mut systick);
+    bench::bench_encrypt0(&mut systick);
+    bench::bench_sign1(&mut systick);
 
     // Let's try a panic.
     // #[allow(unconditional_panic)]
