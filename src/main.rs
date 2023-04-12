@@ -101,6 +101,9 @@ fn main() -> ! {
     bench::bench_encrypt0(&mut systick);
     bench::bench_sign1(&mut systick);
 
+    // Print out if we leaked anything:
+    info!("used: {}, free: {}", HEAP.used(), HEAP.free());
+
     // Let's try a panic.
     // #[allow(unconditional_panic)]
     // let _ = 1 / 0;
