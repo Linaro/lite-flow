@@ -7,6 +7,16 @@ device to the cloud.
 In order to gather some meaningful benchmarks, there is also a main program that
 is able to run on some embedded targets to benchmark this encryption.
 
+## Submodules
+
+This repo currently brings in a current version of embassy with git submodules,
+and if you didn't add `--submodules` when cloning the repo, you will need to
+update those:
+
+```
+$ git submodule update --init
+```
+
 ## On target benchmarking
 
 Currently, the benchmark can be run on the STM32F407VGTx Discovery board, which
