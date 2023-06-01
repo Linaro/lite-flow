@@ -1,16 +1,13 @@
 #![feature(maybe_uninit_as_bytes)]
 
-use core::slice;
 use embedded_storage::ReadStorage;
 use std::{
-    mem::{self, size_of, MaybeUninit},
+    mem::size_of,
     path::Path,
 };
 use thiserror::Error;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+use mcuboot_direct::{AsRaw, ReadStorageExt};
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -33,14 +30,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
 
     #[test]
     fn load_image() {
@@ -87,48 +77,6 @@ impl Header {
     }
 }
 
-/// View this type as a byte array. This is technically unsound, but by
-/// keeping the unsafe encapsulated here, the unsoundness should be
-/// relegated to just the valid contents of the fields within the structure.
-/// As such, this should generally only be implemented for types that are
-/// just low level types.
-trait AsRaw: Sized {
-    fn as_raw(&self) -> &[u8] {
-        unsafe { slice::from_raw_parts(self as *const _ as *const u8, mem::size_of::<Self>()) }
-    }
-
-    fn as_raw_mut(&mut self) -> &mut [u8] {
-        unsafe { slice::from_raw_parts_mut(self as *mut _ as *mut u8, mem::size_of::<Self>()) }
-    }
-
-    // Build one of these by copying the data out of a buffer.
-    fn from_bytes(buf: &[u8]) -> Self {
-        let mut item = MaybeUninit::<Self>::uninit();
-        {
-            let dbuf = item.as_bytes_mut();
-            let src = unsafe { mem::transmute::<_, &[MaybeUninit<u8>]>(buf) };
-            dbuf.clone_from_slice(src);
-        }
-        unsafe { item.assume_init() }
-    }
-}
-
-// AsRaw things can be read.
-trait ReadStorageExt {
-    fn from_storage<R: AsRaw>(&mut self, offset: u32) -> Result<R>;
-}
-
-impl<T: ReadStorage> ReadStorageExt for T {
-    fn from_storage<R: AsRaw>(&mut self, offset: u32) -> Result<R> {
-        // TODO: Some experimental features of the compiler may allow this
-        // to be done as an array with const, but for now, just alloc.
-        // let mut buf = [0u8; size_of::<R>()];
-        let mut buf = vec![0u8; size_of::<R>()];
-        self.read(offset, &mut buf).map_err(|_| Error::Flash)?;
-        Ok(AsRaw::from_bytes(&buf))
-    }
-}
-
 /// Tracker for the TLV.  The slice are the raw bytes of the TLV.
 pub struct Tlv {
     // protect_size: usize,
@@ -142,7 +90,8 @@ pub struct Tlv {
 impl Tlv {
     pub fn new<FF: ReadStorage>(head: &Header, flash: &mut FF) -> Result<Tlv> {
         let base = head.tlv_base();
-        let tlv_head: TlvHead = flash.from_storage(head.tlv_base() as u32)?;
+        let tlv_head: TlvHead = flash.from_storage(head.tlv_base() as u32)
+            .map_err(|_| Error::Flash)?;
         println!("Head: {:#x?}", tlv_head);
 
         match tlv_head.tag {
@@ -155,13 +104,15 @@ impl Tlv {
 
                 // There should be an unprotected header after this many bytes.
                 let unprot_offset = head.tlv_base() + tlv_head.length as usize;
-                let unprot_head: TlvHead = flash.from_storage(unprot_offset as u32)?;
+                let unprot_head: TlvHead = flash.from_storage(unprot_offset as u32)
+                    .map_err(|_| Error::Flash)?;
                 println!("unprot {:#x?}", unprot_head);
 
                 // Walk through the protected TLV.
                 let mut offset = size_of::<TlvHead>();
                 while offset < tlv_head.length as usize {
-                    let tag: TlvTag = flash.from_storage((head.tlv_base() + offset) as u32)?;
+                    let tag: TlvTag = flash.from_storage((head.tlv_base() + offset) as u32)
+                        .map_err(|_| Error::Flash)?;
                     println!("prot {:x} {:#x?}", offset, tag);
                     offset += size_of::<TlvTag>() + tag.length as usize;
                 }
@@ -170,7 +121,8 @@ impl Tlv {
                 let base = head.tlv_base() + tlv_head.length as usize;
                 offset = size_of::<TlvHead>();
                 while offset < unprot_head.length as usize {
-                    let tag: TlvTag = flash.from_storage((base + offset) as u32)?;
+                    let tag: TlvTag = flash.from_storage((base + offset) as u32)
+                        .map_err(|_| Error::Flash)?;
                     println!("unprot {:x} {:#x?}", offset, tag);
                     offset += size_of::<TlvTag>() + tag.length as usize;
                 }
