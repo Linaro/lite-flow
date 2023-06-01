@@ -43,7 +43,9 @@ mod tests {
         let head: Header = image.from_storage(0).unwrap();
         println!("Imagec: {:#x?}", head);
         println!("TLV: {:x?}", head.tlv_base());
-        let _ = Tlv::new(&head, &mut image);
+        let tlv = Tlv::new(&head, &mut image).unwrap();
+        println!("TLV: {:#x?}", tlv);
+        tlv.validate(&mut image).unwrap();
         panic!("TODO");
     }
 }
@@ -78,8 +80,17 @@ impl Header {
 }
 
 /// Tracker for the TLV.  The slice are the raw bytes of the TLV.
+#[derive(Debug)]
 pub struct Tlv {
-    // protect_size: usize,
+    protect: Option<TlvSection>,
+    unprotect: TlvSection,
+}
+
+/// Represents a single TLV block, with a header, and some number of bytes of data after it.
+#[derive(Debug)]
+struct TlvSection {
+    offset: usize,
+    header: TlvHead,
 }
 
 /// There are two forms of the TLV. When there is a protected TLV, there is
@@ -92,10 +103,19 @@ impl Tlv {
         let base = head.tlv_base();
         let tlv_head: TlvHead = flash.from_storage(head.tlv_base() as u32)
             .map_err(|_| Error::Flash)?;
-        println!("Head: {:#x?}", tlv_head);
 
         match tlv_head.tag {
-            0x6907 => unimplemented!(),
+            0x6907 => {
+                // There isn't anything to test about the TLV at this point. A
+                // validate will make sure that all of the sections can be read.
+                Ok(Tlv {
+                    protect: None,
+                    unprotect: TlvSection {
+                        offset: base,
+                        header: tlv_head,
+                    }
+                })
+            }
             0x6908 => {
                 // This is a protected TLV.  The TLV size must match the protected size in the header.
                 if head.protect_tlv_size == 0 || head.protect_tlv_size != tlv_head.length {
@@ -106,31 +126,51 @@ impl Tlv {
                 let unprot_offset = head.tlv_base() + tlv_head.length as usize;
                 let unprot_head: TlvHead = flash.from_storage(unprot_offset as u32)
                     .map_err(|_| Error::Flash)?;
-                println!("unprot {:#x?}", unprot_head);
 
-                // Walk through the protected TLV.
-                let mut offset = size_of::<TlvHead>();
-                while offset < tlv_head.length as usize {
-                    let tag: TlvTag = flash.from_storage((head.tlv_base() + offset) as u32)
-                        .map_err(|_| Error::Flash)?;
-                    println!("prot {:x} {:#x?}", offset, tag);
-                    offset += size_of::<TlvTag>() + tag.length as usize;
-                }
-                println!("Prot done");
-
-                let base = head.tlv_base() + tlv_head.length as usize;
-                offset = size_of::<TlvHead>();
-                while offset < unprot_head.length as usize {
-                    let tag: TlvTag = flash.from_storage((base + offset) as u32)
-                        .map_err(|_| Error::Flash)?;
-                    println!("unprot {:x} {:#x?}", offset, tag);
-                    offset += size_of::<TlvTag>() + tag.length as usize;
-                }
-                println!("Unprot done");
+                Ok(Tlv {
+                    protect: Some(TlvSection {
+                        offset: base,
+                        header: tlv_head,
+                    }),
+                    unprotect: TlvSection {
+                        offset: unprot_offset,
+                        header: unprot_head,
+                    }
+                })
             }
             _ => return Err(Error::InvalidTlv),
         }
-        Ok(Tlv {})
+    }
+
+    /// Validate that the TLV sections can be iterated, and that everything is
+    /// in the proper section.
+    fn validate<FF: ReadStorage>(&self, flash: &mut FF) -> Result<()> {
+        if let Some(ref prot) = self.protect {
+            Self::walk(prot, flash)?
+        }
+        Self::walk(&self.unprotect, flash)?;
+        Ok(())
+    }
+
+    /// Attempt to walk through the given TLV section, returning Ok(()) if all
+    /// of the TLV tags can be read. Will also return an error if the walk goes
+    /// past the end of the flash.
+    fn walk<FF: ReadStorage>(section: &TlvSection, flash: &mut FF) -> Result<()> {
+        let nbase = section.offset;
+        let mut offset = size_of::<TlvHead>();
+        while offset < section.header.length as usize {
+            // TODO: Arith overflow here.
+            let tag: TlvTag = flash.from_storage((nbase + offset) as u32)
+                .map_err(|_| Error::Flash)?;
+            println!("tag: {:x} {:x?}", offset, tag);
+            offset += size_of::<TlvTag>() + tag.length as usize;
+
+            // Make sure we are always within the bounds of the flash.
+            if (nbase + offset) > flash.capacity() {
+                return Err(Error::InvalidTlv);
+            }
+        }
+        Ok(())
     }
 }
 
