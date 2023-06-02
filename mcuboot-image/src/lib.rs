@@ -162,7 +162,7 @@ impl Tlv {
 
     /// Validate that the TLV sections can be iterated, and that everything is
     /// in the proper section.
-    fn validate<FF: ReadStorage>(&self, flash: &mut FF) -> Result<()> {
+    pub fn validate<FF: ReadStorage>(&self, flash: &mut FF) -> Result<()> {
         if let Some(ref prot) = self.protect {
             Self::walk(prot, flash)?
         }
@@ -208,14 +208,14 @@ struct TlvTag {
 impl AsRaw for TlvTag {}
 
 #[derive(Error, Debug)]
-enum FlashError {
+pub enum FlashError {
     #[error("Read past device bounds")]
     ReadBound,
 }
 type FlashResult<T> = std::result::Result<T, FlashError>;
 
 /// A simulated flash device loaded from an image.
-struct LoadedFlash {
+pub struct LoadedFlash {
     data: Vec<u8>,
 }
 
