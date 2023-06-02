@@ -152,6 +152,11 @@ impl Tlv {
 
         match tlv_head.tag.try_into() {
             Ok(TlvMagic::InfoMagic) => {
+                // The protected_tlv_size in the header must be zero.
+                if head.protect_tlv_size != 0 {
+                    return Err(Error::InvalidTlv);
+                }
+
                 // There isn't anything to test about the TLV at this point. A
                 // validate will make sure that all of the sections can be read.
                 Ok(Tlv {
@@ -191,23 +196,39 @@ impl Tlv {
     /// in the proper section.
     pub fn validate<FF: ReadStorage>(&self, flash: &mut FF) -> Result<()> {
         if let Some(ref prot) = self.protect {
-            Self::walk(prot, flash)?
+            Self::walk(prot, flash, |tag| {
+                if !must_be_protected(tag) {
+                    Err(Error::InvalidTlv)
+                } else {
+                    Ok(())
+                }
+            })?
         }
-        Self::walk(&self.unprotect, flash)?;
+        Self::walk(&self.unprotect, flash, |tag| {
+            if must_be_protected(tag) {
+                Err(Error::InvalidTlv)
+            } else {
+                Ok(())
+            }
+        })?;
         Ok(())
     }
 
     /// Attempt to walk through the given TLV section, returning Ok(()) if all
     /// of the TLV tags can be read. Will also return an error if the walk goes
     /// past the end of the flash.
-    fn walk<FF: ReadStorage>(section: &TlvSection, flash: &mut FF) -> Result<()> {
+    fn walk<FF: ReadStorage, F>(section: &TlvSection, flash: &mut FF, check: F) -> Result<()>
+    where
+        F: Fn(u16) -> Result<()>,
+    {
         let nbase = section.offset;
         let mut offset = size_of::<TlvHead>();
         while offset < section.header.length as usize {
             // TODO: Arith overflow here.
             let tag: TlvItem = try_storage!(flash.from_storage((nbase + offset) as u32))?;
-            println!("tag: {:x} {:x?}", offset, tag);
-            offset += size_of::<TlvTag>() + tag.length as usize;
+            offset += size_of::<TlvItem>() + tag.length as usize;
+
+            check(tag.kind)?;
 
             // Make sure we are always within the bounds of the flash.
             if (nbase + offset) > flash.capacity() {
@@ -216,6 +237,13 @@ impl Tlv {
         }
         Ok(())
     }
+}
+
+/// Is this Tlv tag required to be in the protected section. The Tlv will be
+/// marked as invalid if any of these are found in the unprotected section, or
+/// if any others are found in the protected section.
+fn must_be_protected(tag: u16) -> bool {
+    tag == TlvTag::Dependency as u16
 }
 
 #[repr(C)]
