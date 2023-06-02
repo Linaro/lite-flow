@@ -151,7 +151,7 @@ impl Tlv {
         let tlv_head: TlvHead = try_storage!(flash.from_storage(head.tlv_base() as u32))?;
 
         match tlv_head.tag.try_into() {
-            Ok(TlvMagic::ProtInfoMagic) => {
+            Ok(TlvMagic::InfoMagic) => {
                 // There isn't anything to test about the TLV at this point. A
                 // validate will make sure that all of the sections can be read.
                 Ok(Tlv {
@@ -162,7 +162,7 @@ impl Tlv {
                     }
                 })
             }
-            Ok(TlvMagic::InfoMagic) => {
+            Ok(TlvMagic::ProtInfoMagic) => {
                 // This is a protected TLV.  The TLV size must match the protected size in the header.
                 if head.protect_tlv_size == 0 || head.protect_tlv_size != tlv_head.length {
                     return Err(Error::InvalidTlv);
