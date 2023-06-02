@@ -1,6 +1,7 @@
 #![feature(maybe_uninit_as_bytes)]
 
 use embedded_storage::ReadStorage;
+use num_enum::TryFromPrimitive;
 use std::{
     mem::size_of,
     path::Path,
@@ -102,6 +103,14 @@ struct TlvSection {
     header: TlvHead,
 }
 
+/// Magic numbers for the TLV headers.
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u16)]
+pub enum TlvMagic {
+    InfoMagic = 0x6907,
+    ProtInfoMagic = 0x6908,
+}
+
 /// There are two forms of the TLV. When there is a protected TLV, there is
 /// a protected header, followed by the given number of bytes of protected
 /// entries. This is then followed by an unprotected header, which will have
@@ -112,8 +121,9 @@ impl Tlv {
         let base = head.tlv_base();
         let tlv_head: TlvHead = try_storage!(flash.from_storage(head.tlv_base() as u32))?;
 
-        match tlv_head.tag {
-            0x6907 => {
+        match tlv_head.tag.try_into() {
+            Ok(TlvMagic::ProtInfoMagic) => {
+            // 0x6907 => {
                 // There isn't anything to test about the TLV at this point. A
                 // validate will make sure that all of the sections can be read.
                 Ok(Tlv {
@@ -124,7 +134,8 @@ impl Tlv {
                     }
                 })
             }
-            0x6908 => {
+            Ok(TlvMagic::InfoMagic) => {
+            // 0x6908 => {
                 // This is a protected TLV.  The TLV size must match the protected size in the header.
                 if head.protect_tlv_size == 0 || head.protect_tlv_size != tlv_head.length {
                     return Err(Error::InvalidTlv);
