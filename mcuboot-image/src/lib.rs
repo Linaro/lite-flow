@@ -28,6 +28,15 @@ pub enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
+/// Storage doesn't constrain it's error type, so it is awkward to use. This
+/// macro will try a storage operation, mapping the error return to the above
+/// `Storage` error.
+macro_rules! try_storage {
+    ($e:expr) => {
+        $e.map_err(|_| Error::Flash)
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,8 +110,7 @@ struct TlvSection {
 impl Tlv {
     pub fn new<FF: ReadStorage>(head: &Header, flash: &mut FF) -> Result<Tlv> {
         let base = head.tlv_base();
-        let tlv_head: TlvHead = flash.from_storage(head.tlv_base() as u32)
-            .map_err(|_| Error::Flash)?;
+        let tlv_head: TlvHead = try_storage!(flash.from_storage(head.tlv_base() as u32))?;
 
         match tlv_head.tag {
             0x6907 => {
@@ -124,8 +132,7 @@ impl Tlv {
 
                 // There should be an unprotected header after this many bytes.
                 let unprot_offset = head.tlv_base() + tlv_head.length as usize;
-                let unprot_head: TlvHead = flash.from_storage(unprot_offset as u32)
-                    .map_err(|_| Error::Flash)?;
+                let unprot_head: TlvHead = try_storage!(flash.from_storage(unprot_offset as u32))?;
 
                 Ok(Tlv {
                     protect: Some(TlvSection {
@@ -160,8 +167,7 @@ impl Tlv {
         let mut offset = size_of::<TlvHead>();
         while offset < section.header.length as usize {
             // TODO: Arith overflow here.
-            let tag: TlvTag = flash.from_storage((nbase + offset) as u32)
-                .map_err(|_| Error::Flash)?;
+            let tag: TlvTag = try_storage!(flash.from_storage((nbase + offset) as u32))?;
             println!("tag: {:x} {:x?}", offset, tag);
             offset += size_of::<TlvTag>() + tag.length as usize;
 
