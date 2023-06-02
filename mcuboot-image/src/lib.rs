@@ -111,6 +111,27 @@ pub enum TlvMagic {
     ProtInfoMagic = 0x6908,
 }
 
+/// Known tags for the TLV tags.
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u16)]
+pub enum TlvTag {
+    KeyHash = 0x01,
+    PubKey = 0x02,
+    Sha256 = 0x10,
+    Rsa2048Pss = 0x20,
+    Ecdsa224 = 0x21,
+    Ecdsa256 = 0x22,
+    Rsa3072Pss = 0x23,
+    Ed25519 = 0x24,
+    EncRsa2048 = 0x30,
+    EncKw = 0x31,
+    EncEc256 = 0x32,
+    EncX25519 = 0x33,
+    Dependency = 0x40,
+    SecCnt = 0x50,
+    BootRecord = 0x60,
+}
+
 /// There are two forms of the TLV. When there is a protected TLV, there is
 /// a protected header, followed by the given number of bytes of protected
 /// entries. This is then followed by an unprotected header, which will have
@@ -178,7 +199,7 @@ impl Tlv {
         let mut offset = size_of::<TlvHead>();
         while offset < section.header.length as usize {
             // TODO: Arith overflow here.
-            let tag: TlvTag = try_storage!(flash.from_storage((nbase + offset) as u32))?;
+            let tag: TlvItem = try_storage!(flash.from_storage((nbase + offset) as u32))?;
             println!("tag: {:x} {:x?}", offset, tag);
             offset += size_of::<TlvTag>() + tag.length as usize;
 
@@ -201,11 +222,11 @@ impl AsRaw for TlvHead {}
 
 #[repr(C)]
 #[derive(Debug)]
-struct TlvTag {
+struct TlvItem {
     kind: u16,
     length: u16,
 }
-impl AsRaw for TlvTag {}
+impl AsRaw for TlvItem {}
 
 #[derive(Error, Debug)]
 pub enum FlashError {
