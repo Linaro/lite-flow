@@ -144,7 +144,6 @@ impl Tlv {
 
         match tlv_head.tag.try_into() {
             Ok(TlvMagic::ProtInfoMagic) => {
-            // 0x6907 => {
                 // There isn't anything to test about the TLV at this point. A
                 // validate will make sure that all of the sections can be read.
                 Ok(Tlv {
@@ -156,7 +155,6 @@ impl Tlv {
                 })
             }
             Ok(TlvMagic::InfoMagic) => {
-            // 0x6908 => {
                 // This is a protected TLV.  The TLV size must match the protected size in the header.
                 if head.protect_tlv_size == 0 || head.protect_tlv_size != tlv_head.length {
                     return Err(Error::InvalidTlv);
