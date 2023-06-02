@@ -38,6 +38,14 @@ macro_rules! try_storage {
     };
 }
 
+// This doesn't work because the `From` isn't constrained by `R`, and two
+// `ReadStorage` implementations could have the same error type.  For now, just use the above try_storage.
+// impl<R: ReadStorage> From<R::Error> for Error {
+//     fn from(_: FlashError) -> Error {
+//         Error::Flash
+//     }
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;
