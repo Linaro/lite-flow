@@ -2,10 +2,7 @@
 
 use embedded_storage::ReadStorage;
 use num_enum::TryFromPrimitive;
-use std::{
-    mem::size_of,
-    path::Path,
-};
+use std::{mem::size_of, path::Path};
 use thiserror::Error;
 
 use mcuboot_direct::{AsRaw, ReadStorageExt};
@@ -164,7 +161,7 @@ impl Tlv {
                     unprotect: TlvSection {
                         offset: base,
                         header: tlv_head,
-                    }
+                    },
                 })
             }
             Ok(TlvMagic::ProtInfoMagic) => {
@@ -185,7 +182,7 @@ impl Tlv {
                     unprotect: TlvSection {
                         offset: unprot_offset,
                         header: unprot_head,
-                    }
+                    },
                 })
             }
             _ => return Err(Error::InvalidTlv),
