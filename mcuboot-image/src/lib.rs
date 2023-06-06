@@ -1,5 +1,6 @@
 #![feature(maybe_uninit_as_bytes)]
 
+use core::cell::RefCell;
 use embedded_storage::ReadStorage;
 use num_enum::TryFromPrimitive;
 use std::{mem::size_of, path::Path};
@@ -49,18 +50,20 @@ mod tests {
 
     #[test]
     fn load_image() {
-        let mut image = LoadedFlash::from_file("signed.bin").unwrap();
+        let image = LoadedFlash::from_file("signed.bin").unwrap();
+        let image = RefCell::new(image);
         // Load in an image, and make sure we can decode the header.
         // let image = std::fs::read("signed.bin").unwrap();
-        println!("Image size: {}", image.capacity());
+        println!("Image size: {}", image.borrow().capacity());
 
         // let head: Header = AsRaw::from_bytes(&image[0..32]);
-        let head: Header = image.from_storage(0).unwrap();
+        let head: Header = image.borrow_mut().from_storage(0).unwrap();
         println!("Imagec: {:#x?}", head);
         println!("TLV: {:x?}", head.tlv_base());
-        let tlv = Tlv::new(&head, &mut image).unwrap();
-        println!("TLV: {:#x?}", tlv);
-        tlv.validate(&mut image).unwrap();
+        let tlv = Tlv::new(&head, image).unwrap();
+        println!("TLV: unprot: {:#x?}", tlv.unprotect);
+        println!("TLV: prot: {:#x?}", tlv.protect);
+        tlv.validate().unwrap();
         panic!("TODO");
     }
 }
@@ -96,9 +99,10 @@ impl Header {
 
 /// Tracker for the TLV.  The slice are the raw bytes of the TLV.
 #[derive(Debug)]
-pub struct Tlv {
+pub struct Tlv<R> {
     protect: Option<TlvSection>,
     unprotect: TlvSection,
+    flash: RefCell<R>,
 }
 
 /// Represents a single TLV block, with a header, and some number of bytes of data after it.
@@ -142,10 +146,10 @@ pub enum TlvTag {
 /// entries. This is then followed by an unprotected header, which will have
 /// some number of entries following it.
 /// In each case, the header length includes the header itself.
-impl Tlv {
-    pub fn new<FF: ReadStorage>(head: &Header, flash: &mut FF) -> Result<Tlv> {
+impl<R: ReadStorage> Tlv<R> {
+    pub fn new(head: &Header, flash: RefCell<R>) -> Result<Tlv<R>> {
         let base = head.tlv_base();
-        let tlv_head: TlvHead = try_storage!(flash.from_storage(head.tlv_base() as u32))?;
+        let tlv_head: TlvHead = try_storage!(flash.borrow_mut().from_storage(head.tlv_base() as u32))?;
 
         match tlv_head.tag.try_into() {
             Ok(TlvMagic::InfoMagic) => {
@@ -162,6 +166,7 @@ impl Tlv {
                         offset: base,
                         header: tlv_head,
                     },
+                    flash,
                 })
             }
             Ok(TlvMagic::ProtInfoMagic) => {
@@ -172,7 +177,7 @@ impl Tlv {
 
                 // There should be an unprotected header after this many bytes.
                 let unprot_offset = head.tlv_base() + tlv_head.length as usize;
-                let unprot_head: TlvHead = try_storage!(flash.from_storage(unprot_offset as u32))?;
+                let unprot_head: TlvHead = try_storage!(flash.borrow_mut().from_storage(unprot_offset as u32))?;
 
                 Ok(Tlv {
                     protect: Some(TlvSection {
@@ -183,6 +188,7 @@ impl Tlv {
                         offset: unprot_offset,
                         header: unprot_head,
                     },
+                    flash,
                 })
             }
             _ => return Err(Error::InvalidTlv),
@@ -191,9 +197,9 @@ impl Tlv {
 
     /// Validate that the TLV sections can be iterated, and that everything is
     /// in the proper section.
-    pub fn validate<FF: ReadStorage>(&self, flash: &mut FF) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         if let Some(ref prot) = self.protect {
-            Self::walk(prot, flash, |tag| {
+            self.walk(prot, |tag| {
                 if !must_be_protected(tag) {
                     Err(Error::InvalidTlv)
                 } else {
@@ -201,7 +207,7 @@ impl Tlv {
                 }
             })?
         }
-        Self::walk(&self.unprotect, flash, |tag| {
+        self.walk(&self.unprotect, |tag| {
             if must_be_protected(tag) {
                 Err(Error::InvalidTlv)
             } else {
@@ -214,7 +220,7 @@ impl Tlv {
     /// Attempt to walk through the given TLV section, returning Ok(()) if all
     /// of the TLV tags can be read. Will also return an error if the walk goes
     /// past the end of the flash.
-    fn walk<FF: ReadStorage, F>(section: &TlvSection, flash: &mut FF, check: F) -> Result<()>
+    fn walk<F>(&self, section: &TlvSection, check: F) -> Result<()>
     where
         F: Fn(u16) -> Result<()>,
     {
@@ -222,17 +228,21 @@ impl Tlv {
         let mut offset = size_of::<TlvHead>();
         while offset < section.header.length as usize {
             // TODO: Arith overflow here.
-            let tag: TlvItem = try_storage!(flash.from_storage((nbase + offset) as u32))?;
+            let tag: TlvItem = try_storage!(self.flash.borrow_mut().from_storage((nbase + offset) as u32))?;
             offset += size_of::<TlvItem>() + tag.length as usize;
 
             check(tag.kind)?;
 
             // Make sure we are always within the bounds of the flash.
-            if (nbase + offset) > flash.capacity() {
+            if (nbase + offset) > self.flash.borrow_mut().capacity() {
                 return Err(Error::InvalidTlv);
             }
         }
         Ok(())
+    }
+
+    pub fn into_storage(self) -> RefCell<R> {
+        self.flash
     }
 }
 
