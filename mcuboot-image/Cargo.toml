@@ -11,3 +11,4 @@ embedded-storage = "0.3.0"
 thiserror = "1.0.40"
 
 mcuboot-direct = { version = "0.1.0", path = "../mcuboot-direct" }
+num_enum = { version = "0.6.1", default-features = false }
