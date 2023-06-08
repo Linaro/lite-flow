@@ -16,38 +16,36 @@ let is_printable ch =
   Char.compare ch ' ' >= 0 && Char.compare ch '~' <= 0
 
 let walk (cbor : CBOR.t) =
-  let ilevel = ref 0 in
-  let indent () =
-    for _ = 1 to !ilevel do
+  let indent level =
+    for _ = 1 to level do
       printf "    "
     done in
-  let more () = incr ilevel in
-  let less () = decr ilevel in
-  let rec walk (cbor : CBOR.t) =
+  let rec walk ?(level = 0) (cbor : CBOR.t) =
+    let nlevel = level + 1 in
     match cbor with
     | `Tag (n, sub) ->
-      printf "%d(\n" n; more ();
-      indent (); walk sub;
+      printf "%d(\n" n;
+      indent nlevel; walk ~level:nlevel sub;
       printf "\n";
-      less (); indent (); printf ")";
+      indent level; printf ")";
     | `Array elts ->
-      printf "[\n"; more ();
+      printf "[\n";
       let show_elt elt =
-        indent ();
-        walk elt;
+        indent nlevel;
+        walk ~level:nlevel elt;
         printf ",\n" in
       List.iter show_elt elts;
-      less (); indent (); printf "]"
+      indent level; printf "]"
     | `Map elts ->
-      printf "{\n"; more ();
+      printf "{\n";
       let show_elt (k, v) =
-        indent ();
-        walk k;
+        indent nlevel;
+        walk ~level:nlevel k;
         printf ": ";
-        walk v;
+        walk ~level:nlevel v;
         printf ",\n" in
       List.iter show_elt elts;
-      less (); indent (); printf "}";
+      indent level; printf "}";
     | `Int ii ->
       printf "%Ld" ii
     | `Bytes b ->
@@ -55,11 +53,11 @@ let walk (cbor : CBOR.t) =
          nested notation. *)
       begin match CBOR.decode b with
         | Result.Ok sub when is_sane sub ->
-          printf "<<\n"; more ();
-          indent ();
-          walk sub;
+          printf "<<\n";
+          indent nlevel;
+          walk ~level:nlevel sub;
           printf "\n";
-          less (); indent (); printf ">>"
+          indent level; printf ">>"
         | _ ->
           if String.for_all is_printable b then
             printf "b%S" b
