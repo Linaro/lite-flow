@@ -87,17 +87,19 @@ let unhex_block hex =
   loop 0
 
 (* Decode the two arguments, returning the raw cbor in either case. *)
-let get_cbor name hex =
-  match (name, hex) with
-  | (None, None) -> failwith "Must specify either --file or --hex"
-  | (Some name, None) ->
+let get_cbor name hex example =
+  match (name, hex, example) with
+  | (None, None, None) -> failwith "Must specify one of --file or --hex or --example"
+  | (Some name, None, None) ->
     IO.with_in name IO.read_all
-  | (None, Some hex) ->
+  | (None, Some hex, None) ->
     unhex_block hex
+  | (None, None, Some example) ->
+    unhex_block (Example.from_example example)
   | _ -> failwith "Must give either --file or --hex, not both"
 
-let diagprint name hex =
-  let buf = get_cbor name hex in
+let diagprint name hex example =
+  let buf = get_cbor name hex example in
   let buf = buf |> cbor_decode |> Result.get_or_failwith in
   walk buf
 
@@ -110,7 +112,11 @@ let hexarg =
   let doc = "Direct CBOR input as hex." in
   Arg.(value & opt (some string) None & info ["h"; "hex"] ~docv:"HEX" ~doc)
 
-let diagprint_t = Term.(const diagprint $ filename $ hexarg)
+let examarg =
+  let doc = "Read from a COSE example json file." in
+  Arg.(value & opt (some file) None & info ["example"] ~docv:"EXAMPLE" ~doc)
+
+let diagprint_t = Term.(const diagprint $ filename $ hexarg $ examarg)
 
 let cmd =
   let doc = "Pretty print a CBOR file in diag notation" in
