@@ -72,12 +72,32 @@ let rec walk ?(level = 0) (cbor : cbor_t) =
 
 let walk cbor = walk cbor; printf "\n"
 
-let diagprint name =
-  let buf = match name with
-    | Some name ->
-      IO.with_in name IO.read_all
-    | None -> failwith "TODO: no file specified"
-  in
+(* Convert a hex string to binary.  This is fairly inefficient as it does a lot of allocations. *)
+let unhex_block hex =
+  let len = String.length hex in
+  if len mod 2 <> 0 then failwith "Odd number of hex characters given";
+  let result = Buffer.create (len / 2) in
+  let rec loop pos =
+    if pos >= len then Buffer.contents result else begin
+      let chs = String.sub hex pos 2 in
+      let value = int_of_string ("0x" ^ chs) in
+      Buffer.add_int8 result value;
+      loop (pos + 2)
+    end in
+  loop 0
+
+(* Decode the two arguments, returning the raw cbor in either case. *)
+let get_cbor name hex =
+  match (name, hex) with
+  | (None, None) -> failwith "Must specify either --file or --hex"
+  | (Some name, None) ->
+    IO.with_in name IO.read_all
+  | (None, Some hex) ->
+    unhex_block hex
+  | _ -> failwith "Must give either --file or --hex, not both"
+
+let diagprint name hex =
+  let buf = get_cbor name hex in
   let buf = buf |> cbor_decode |> Result.get_or_failwith in
   walk buf
 
@@ -86,7 +106,11 @@ let filename =
   Arg.(value &  opt (some file) None & info ["f"; "file"] ~docv:"FILE" ~doc)
   (* Arg.(required & pos 0 (some file) None & info [] ~docv:"NAME" ~doc) *)
 
-let diagprint_t = Term.(const diagprint $ filename)
+let hexarg =
+  let doc = "Direct CBOR input as hex." in
+  Arg.(value & opt (some string) None & info ["h"; "hex"] ~docv:"HEX" ~doc)
+
+let diagprint_t = Term.(const diagprint $ filename $ hexarg)
 
 let cmd =
   let doc = "Pretty print a CBOR file in diag notation" in
