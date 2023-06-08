@@ -1,0 +1,3 @@
+(executable
+  (name diagprint)
+  (libraries cmdliner containers.cbor))
