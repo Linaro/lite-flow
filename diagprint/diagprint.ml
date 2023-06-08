@@ -15,62 +15,64 @@ let is_sane (cbor: CBOR.t) = match cbor with
 let is_printable ch =
   Char.compare ch ' ' >= 0 && Char.compare ch '~' <= 0
 
-let walk (cbor : CBOR.t) =
-  let indent level =
-    for _ = 1 to level do
-      printf "    "
-    done in
-  let rec walk ?(level = 0) (cbor : CBOR.t) =
-    let nlevel = level + 1 in
-    match cbor with
-    | `Tag (n, sub) ->
-      printf "%d(\n" n;
-      indent nlevel; walk ~level:nlevel sub;
-      printf "\n";
-      indent level; printf ")";
-    | `Array elts ->
-      printf "[\n";
-      let show_elt elt =
+(** Indent to the given level. *)
+let indent level =
+  for _ = 1 to level do
+    printf "    "
+  done
+
+let rec walk ?(level = 0) (cbor : CBOR.t) =
+  let nlevel = level + 1 in
+  match cbor with
+  | `Tag (n, sub) ->
+    printf "%d(\n" n;
+    indent nlevel; walk ~level:nlevel sub;
+    printf "\n";
+    indent level; printf ")";
+  | `Array elts ->
+    printf "[\n";
+    let show_elt elt =
+      indent nlevel;
+      walk ~level:nlevel elt;
+      printf ",\n" in
+    List.iter show_elt elts;
+    indent level; printf "]"
+  | `Map elts ->
+    printf "{\n";
+    let show_elt (k, v) =
+      indent nlevel;
+      walk ~level:nlevel k;
+      printf ": ";
+      walk ~level:nlevel v;
+      printf ",\n" in
+    List.iter show_elt elts;
+    indent level; printf "}";
+  | `Int ii ->
+    printf "%Ld" ii
+  | `Bytes b ->
+    (* Attempt to decode the bytes into additional cbor, if that works, print in
+       nested notation. *)
+    begin match CBOR.decode b with
+      | Result.Ok sub when is_sane sub ->
+        printf "<<\n";
         indent nlevel;
-        walk ~level:nlevel elt;
-        printf ",\n" in
-      List.iter show_elt elts;
-      indent level; printf "]"
-    | `Map elts ->
-      printf "{\n";
-      let show_elt (k, v) =
-        indent nlevel;
-        walk ~level:nlevel k;
-        printf ": ";
-        walk ~level:nlevel v;
-        printf ",\n" in
-      List.iter show_elt elts;
-      indent level; printf "}";
-    | `Int ii ->
-      printf "%Ld" ii
-    | `Bytes b ->
-      (* Attempt to decode the bytes into additional cbor, if that works, print in
-         nested notation. *)
-      begin match CBOR.decode b with
-        | Result.Ok sub when is_sane sub ->
-          printf "<<\n";
-          indent nlevel;
-          walk ~level:nlevel sub;
-          printf "\n";
-          indent level; printf ">>"
-        | _ ->
-          if String.for_all is_printable b then
-            printf "b%S" b
-          else begin
-            printf "h\'";
-            String.iter (fun ch -> printf "%02X" (Char.to_int ch)) b;
-            printf "'"
-          end
-      end
-    | `Text t ->
-      printf "%S" t
-    | _ -> printf "todo"
-  in walk cbor; printf "\n"
+        walk ~level:nlevel sub;
+        printf "\n";
+        indent level; printf ">>"
+      | _ ->
+        if String.for_all is_printable b then
+          printf "b%S" b
+        else begin
+          printf "h\'";
+          String.iter (fun ch -> printf "%02X" (Char.to_int ch)) b;
+          printf "'"
+        end
+    end
+  | `Text t ->
+    printf "%S" t
+  | _ -> printf "todo"
+
+let walk cbor = walk cbor; printf "\n"
 
 let diagprint name =
   let buf = match name with
