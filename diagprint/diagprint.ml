@@ -3,14 +3,12 @@ open Containers
 
 let printf = Printf.printf
 
-module CBOR = Containers_cbor
+type cbor_t = CBOR.Simple.t
 
-(* When detecting nested cbor, we really don't want to allow arbitrary CBOR, but
-   only maps and arrays. This helps a little bit. *)
-let is_sane (cbor: CBOR.t) = match cbor with
-  | `Array _ -> true
-  | `Map _ -> true
-  | _ -> false
+(* CBOR decode that returns a Result instead of raising an exception. *)
+let cbor_decode packet =
+  try Result.Ok (CBOR.Simple.decode packet) with
+  | CBOR.Error msg -> Result.Error msg
 
 let is_printable ch =
   Char.compare ch ' ' >= 0 && Char.compare ch '~' <= 0
@@ -21,7 +19,7 @@ let indent level =
     printf "    "
   done
 
-let rec walk ?(level = 0) (cbor : CBOR.t) =
+let rec walk ?(level = 0) (cbor : cbor_t) =
   let nlevel = level + 1 in
   match cbor with
   | `Tag (n, sub) ->
@@ -48,12 +46,12 @@ let rec walk ?(level = 0) (cbor : CBOR.t) =
     List.iter show_elt elts;
     indent level; printf "}";
   | `Int ii ->
-    printf "%Ld" ii
+    printf "%d" ii
   | `Bytes b ->
     (* Attempt to decode the bytes into additional cbor, if that works, print in
        nested notation. *)
-    begin match CBOR.decode b with
-      | Result.Ok sub when is_sane sub ->
+    begin match cbor_decode b with
+      | Result.Ok sub ->
         printf "<<\n";
         indent nlevel;
         walk ~level:nlevel sub;
@@ -80,7 +78,7 @@ let diagprint name =
       IO.with_in name IO.read_all
     | None -> failwith "TODO: no file specified"
   in
-  let buf = buf |> CBOR.decode |> Result.get_or_failwith in
+  let buf = buf |> cbor_decode |> Result.get_or_failwith in
   walk buf
 
 let filename =
