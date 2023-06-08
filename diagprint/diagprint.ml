@@ -75,18 +75,18 @@ let walk (cbor : CBOR.t) =
   in walk cbor; printf "\n"
 
 let diagprint name =
-  let open Format in
-  printf "diagprint: %S@." name;
-  let buf = IO.with_in name IO.read_all
-            |> CBOR.decode |> Result.get_or_failwith in
-  (* printf "%s\n" (CBOR.to_string_diagnostic buf); *)
-
-  walk buf;
-  printf "@."
+  let buf = match name with
+    | Some name ->
+      IO.with_in name IO.read_all
+    | None -> failwith "TODO: no file specified"
+  in
+  let buf = buf |> CBOR.decode |> Result.get_or_failwith in
+  walk buf
 
 let filename =
   let doc = "The name of the cbor file to read." in
-  Arg.(required & pos 0 (some file) None & info [] ~docv:"NAME" ~doc)
+  Arg.(value &  opt (some file) None & info ["f"; "file"] ~docv:"FILE" ~doc)
+  (* Arg.(required & pos 0 (some file) None & info [] ~docv:"NAME" ~doc) *)
 
 let diagprint_t = Term.(const diagprint $ filename)
 
@@ -96,7 +96,7 @@ let cmd =
     `S Manpage.s_bugs;
     `P "Email bug reports to <david.brown@linaro.org>."
   ] in
-  let info = Cmd.info "check" ~version:"%%VERSION%%" ~doc ~man in
+  let info = Cmd.info "diagprint" ~version:"%%VERSION%%" ~doc ~man in
   Cmd.v info diagprint_t
 
 let main () = exit (Cmd.eval cmd)
