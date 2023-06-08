@@ -1,6 +1,6 @@
 # The SEDR protocol
 
-The CEDAR protocol (Secure Encoding of Data at Rest) is a file format used to
+The CEDAR protocol (COSE Encoding for Data At Rest) is a file format used to
 securely communicate data between an embedded device and external entities that
 wish to use that data.
 
