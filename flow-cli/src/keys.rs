@@ -422,7 +422,7 @@ impl Key {
         &self,
         payload: &[u8],
         session_id: &[u8],
-        content_type: &str,
+        _content_type: &str,
         rng: impl CryptoRng + RngCore,
     ) -> Result<Vec<u8>> {
         // This signing algorithm doesn't need an rng.
@@ -430,7 +430,7 @@ impl Key {
 
         let prot = HeaderBuilder::new()
             .algorithm(iana::Algorithm::ES256)
-            .content_type(content_type.to_string())
+            // .content_type(content_type.to_string())
             .value(-65537, Value::Bytes(session_id.to_vec()))
             .build();
         let unprot = HeaderBuilder::new()
