@@ -1,8 +1,5 @@
 //! Benchmarking
 
-// To get us going.
-#![allow(unused_imports)]
-
 extern crate alloc;
 
 use aes_gcm::{AeadInPlace, Aes128Gcm, KeyInit, Nonce};
