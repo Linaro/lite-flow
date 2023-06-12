@@ -275,7 +275,7 @@ impl Key {
 
         // Build the cose header (the above was the recipient header).
         let cose_prot_hd = HeaderBuilder::new()
-            .algorithm(iana::Algorithm::ECDH_ES_A128KW)
+            .algorithm(iana::Algorithm::A128GCM)
             .build();
         let cose_unprot_hd = HeaderBuilder::new().iv(kw_iv.to_vec()).build();
 
