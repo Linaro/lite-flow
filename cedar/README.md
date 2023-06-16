@@ -36,7 +36,68 @@ CEDAR_packet = [
 ]
 ```
 
-## CEDAR full payload
+## Protocol usage
+
+There are two primary uses of CEDAR for transporting data from the embedded
+device.  In both cases, it is necessary for some device provisioning to have
+occurred. This provisioning is outside the scope of this document.
+
+The cloud service will have an X.509 certificate and an associated private key
+(only known to the cloud).
+
+Each device will also have an X.509 certificate and its own private key.  These
+certificates should be signed appropriately so that the necessary parties have
+assurance that the certificates are trusted.  The details of this are beyond the
+scope of CEDAR.
+
+COSE uses a key identifier to distinguish keys, but doesn't otherwise specify
+the format.  For CEDAR, we will use the textual representation of the Subject
+field of the X.509 certificate.  Although this textual representation is not
+canonically defined, use the guidelines in [RFC
+4514](https://www.ietf.org/rfc/rfc4514.txt).  In the messages below, "sender"
+will refer to the device, and specifically the device's X.509 certificate, and
+"recipient" will refer to the cloud service, and it's X.509 certificate.
+
+### Full payload
+
+There are instances where a device will need to encrypt/sign a single message
+that is not in the context of a larger set of communication.  This, for example,
+can be used to indicate configuration or environmental changes.  In this case,
+the device should use the CEDAR full payload packet.  This packet contains an
+encrypted payload, as well as a signature by the device of it's authenticity.
+Note that the overhead for the signature is significant (often 100s of ms), so
+this should only be used for infrequently sent data.
+
+### Session data
+
+Because of the overhead of digital signatures, a device can sent larger amounts
+of data by establishing a "session".  The communication is assumed to only be in
+a single direction (device to session).  As such, the cloud service needs to
+ensure that the session establishment packet remains available for as long as
+there are session data packets using that session.  For example, with MQTT, the
+QoS for the session packet can be set to "at least once" delivery, to ensure the
+packet is received, whereas the data payload packets may only need a best effort
+delivery guarantee.
+
+The CEDAR Session packet is similar to the full payload above, except that the
+session key itself is a key for an AEAD cipher (in this case AES128GCM).  There
+is also a new header for a session ID.  The format of the session ID is not
+defined by CEDAR, but it is merely required that the session ID be unique for a
+given sender.  This could be implemented via a Non-volatile counter on the
+device, or by using a larger random number from a properly seeded CPRNG.
+
+The key also should be generated randomly, using a properly seeded CPRNG.
+
+Once the session packet has been sent, further payload can be sent using a CEDAR
+session payload packet.  This uses the session key sent via the session packet
+to encrypt and authenticate the payload, without the overhead, either of space,
+or computation time, of computing a digital signature each time.
+
+## Individual packets
+
+The following sections describe each of the above 3 packet types.
+
+### CEDAR full payload
 
 The full payload represents an encrypted and signed payload.  This is useful for
 infrequently sent data where the overhead of setting up a session is not as
@@ -118,7 +179,7 @@ packets are described by COSE, with the following specifics:
 ```
 
 
-## CEDAR Session packet
+### CEDAR Session packet
 
 This packet is similar to the full payload packet above, except that the
 protected header contains a session ID (should this be protected?), and the
@@ -175,7 +236,7 @@ subsequent messages.
 ]
 ```
 
-## CEDAR Session Payload
+### CEDAR Session Payload
 
 Once a session has been established, the following packet can transmit payload
 using the session key sent with the session packet.
